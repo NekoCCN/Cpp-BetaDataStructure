@@ -672,10 +672,7 @@ namespace betadatastructures
         {
             return {BigInt(0), a};
         }
-        if (b == BigInt(1))
-        {
-            return {a, BigInt(0)};
-        }
+
         if (b.digits_.size() == 1)
         {
             BigInt q = a;
@@ -683,49 +680,95 @@ namespace betadatastructures
             return {q, BigInt(r)};
         }
 
-        BigInt q, r;
-        q.digits_.resize(a.digits_.size(), 0);
+        D d = static_cast<D>(static_cast<DD>(BASE) / (b.digits_.back() + 1));
 
-        for (int i = a.digits_.size() - 1; i >= 0; --i)
+        BigInt a_norm = multiplyShort(a, d);
+        BigInt b_norm = multiplyShort(b, d);
+
+        if (a_norm.digits_.size() == a.digits_.size())
         {
-            r.digits_.insert(r.digits_.begin(), 1, a.digits_[i]);
-            r.trimLeadingZeros();
+            a_norm.digits_.push_back(0);
+        }
 
-            if (compareMagnitude(r, b) < 0)
+        size_t n = a_norm.digits_.size();
+        size_t m = b_norm.digits_.size();
+
+        BigInt q;
+        q.digits_.resize(n - m, 0);
+
+        D v_top = b_norm.digits_.back();
+
+        for (int i = n - m - 1; i >= 0; --i)
+        {
+            DD u_top = static_cast<DD>(a_norm.digits_[i + m]) * BASE + a_norm.digits_[i + m - 1];
+
+            DD q_hat_dd = u_top / v_top;
+            DD r_hat_dd = u_top % v_top;
+
+            D q_hat = static_cast<D>(std::min(q_hat_dd, static_cast<DD>(BASE - 1)));
+
+            if (m > 1)
             {
-                q.digits_[i] = 0;
-                continue;
+                D v_sec = b_norm.digits_[m - 2];
+                D u_sec = (i + m - 2 >= 0) ? a_norm.digits_[i + m - 2] : 0;
+                while (q_hat_dd < BASE && static_cast<DD>(q_hat) * v_sec > r_hat_dd * BASE + u_sec)
+                {
+                    q_hat--;
+                    r_hat_dd += v_top;
+                    if (r_hat_dd >= BASE) break;
+                }
             }
 
-            digit_type low = 1, high = BASE - 1, q_digit = 0;
-            while (low <= high)
+            BigInt temp_product = multiplyShort(b_norm, q_hat);
+
+            long long borrow = 0;
+            for (size_t j = 0; j < temp_product.digits_.size(); ++j)
             {
-                digit_type mid = low + (high - low) / 2;
-                if (mid == 0)
+                long long diff = static_cast<long long>(a_norm.digits_[i + j]) - temp_product.digits_[j] - borrow;
+                if (diff < 0)
                 {
-                    break;
-                }
-                BigInt temp_product = multiplyShort(b, mid);
-                if (compareMagnitude(temp_product, r) <= 0)
-                {
-                    q_digit = mid;
-                    low = mid + 1;
+                    diff += BASE;
+                    borrow = 1;
                 }
                 else
                 {
-                    high = mid - 1;
+                    borrow = 0;
                 }
+                a_norm.digits_[i + j] = static_cast<D>(diff);
+            }
+            borrow = static_cast<long long>(a_norm.digits_[i + temp_product.digits_.size()]) - borrow;
+            if (borrow < 0)
+            {
+                a_norm.digits_[i + temp_product.digits_.size()] = 0;
             }
 
-            if (q_digit > 0)
+            if (borrow < 0)
             {
-                r -= multiplyShort(b, q_digit);
+                q_hat--;
+
+                DD carry = 0;
+                for (size_t j = 0; j < b_norm.digits_.size(); ++j)
+                {
+                    DD sum = static_cast<DD>(a_norm.digits_[i + j]) + b_norm.digits_[j] + carry;
+                    a_norm.digits_[i + j] = static_cast<D>(sum % BASE);
+                    carry = sum / BASE;
+                }
+                a_norm.digits_[i + b_norm.digits_.size()] += carry;
             }
-            q.digits_[i] = q_digit;
+
+            if (q.digits_.size() > i)
+            {
+                q.digits_[i] = q_hat;
+            }
         }
 
         q.trimLeadingZeros();
+
+        BigInt r;
+        r.digits_.assign(a_norm.digits_.begin(), a_norm.digits_.begin() + m);
         r.trimLeadingZeros();
+        D remainder_of_short_div = divideShort(r, d);
+
         return {q, r};
     }
 
