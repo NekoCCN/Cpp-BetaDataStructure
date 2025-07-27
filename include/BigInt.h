@@ -164,6 +164,25 @@ namespace betadatastructures
         os << num.toString();
         return os;
     }
+    template <typename D, typename DD>
+    std::istream& operator>>(std::istream& is, betadatastructures::BigInt<D, DD>& num)
+    {
+        std::string s;
+        is >> s;
+
+        if (is)
+        {
+            try
+            {
+                num = betadatastructures::BigInt<D, DD>(s);
+            }
+            catch (const std::invalid_argument&)
+            {
+                is.setstate(std::ios_base::failbit);
+            }
+        }
+        return is;
+    }
 
     template <typename D, typename DD>
     BigInt<D, DD>::BigInt() : state_(State::Eager)
