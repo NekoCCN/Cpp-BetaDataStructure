@@ -510,19 +510,33 @@ namespace betadatastructures
         {
             return;
         }
+
         if (target.size() < offset + source.size())
         {
             target.resize(offset + source.size(), 0);
         }
+
         DD carry = 0;
-        for (size_t i = 0; i < source.size() || carry > 0; ++i)
+        size_t i = 0;
+
+        for (; i < source.size(); ++i)
         {
-            DD sum = carry + target[offset + i];
-            if (i < source.size()) {
-                sum += source[i];
-            }
+            DD sum = static_cast<DD>(target[offset + i]) + source[i] + carry;
             target[offset + i] = static_cast<D>(sum % BASE);
             carry = sum / BASE;
+        }
+
+        while (carry > 0)
+        {
+            if (offset + i >= target.size())
+            {
+                target.push_back(0);
+            }
+
+            DD sum = static_cast<DD>(target[offset + i]) + carry;
+            target[offset + i] = static_cast<D>(sum % BASE);
+            carry = sum / BASE;
+            i++;
         }
     }
 
