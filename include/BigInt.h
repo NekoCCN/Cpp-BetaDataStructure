@@ -65,8 +65,23 @@ namespace betadatastructures
         static int compareMagnitude(const BigInt& a, const BigInt& b);
         static void addMagnitude(BigInt& a, const BigInt& b);
         static void subtractMagnitude(BigInt& a, const BigInt& b);
+
         static BigInt multiplyMagnitude(const BigInt& a, const BigInt& b);
-        static BigInt karatsubaMultiply(const BigInt& a, const BigInt& b);
+        static void karatsubaRecursive(
+            typename std::vector<digit_type>::const_iterator a_begin,
+            typename std::vector<digit_type>::const_iterator a_end,
+            typename std::vector<digit_type>::const_iterator b_begin,
+            typename std::vector<digit_type>::const_iterator b_end,
+            std::vector<digit_type>& result);
+        static void schoolbookMultiplyInternal(
+            typename std::vector<digit_type>::const_iterator a_begin,
+            typename std::vector<digit_type>::const_iterator a_end,
+            typename std::vector<digit_type>::const_iterator b_begin,
+            typename std::vector<digit_type>::const_iterator b_end,
+            std::vector<digit_type>& result);
+        static void addToInternal(std::vector<digit_type>& target, const std::vector<digit_type>& source, size_t offset = 0);
+        static void subtractFromInternal(std::vector<digit_type>& target, const std::vector<digit_type>& source);
+
         static std::pair<BigInt, BigInt> divideMagnitude(const BigInt& a, const BigInt& b);
         static digit_type divideShort(BigInt& a, digit_type d);
         static BigInt multiplyShort(const BigInt& a, digit_type d);
@@ -85,7 +100,10 @@ namespace betadatastructures
             {
                 other.assertEagerState();
                 ref_.digits_.resize(std::max(ref_.digits_.size(), other.digits_.size()), 0);
-                for (size_t i = 0; i < other.digits_.size(); ++i) { ref_.digits_[i] += other.digits_[i]; }
+                for (size_t i = 0; i < other.digits_.size(); ++i)
+                {
+                    ref_.digits_[i] += other.digits_[i];
+                }
                 return *this;
             }
             LazyProxy& subtract(const BigInt& other)
@@ -147,7 +165,7 @@ namespace betadatastructures
         return os;
     }
 
-     template <typename D, typename DD>
+    template <typename D, typename DD>
     BigInt<D, DD>::BigInt() : state_(State::Eager)
     {
         digits_.push_back(0);
@@ -467,68 +485,138 @@ namespace betadatastructures
     }
 
     template<typename D, typename DD>
-    BigInt<D, DD> BigInt<D, DD>::multiplyMagnitude(const BigInt& a, const BigInt& b)
+    void BigInt<D, DD>::addToInternal(std::vector<D>& target, const std::vector<D>& source, size_t offset)
     {
-        return karatsubaMultiply(a, b);
+        if (source.empty())
+        {
+            return;
+        }
+        if (target.size() < offset + source.size())
+        {
+            target.resize(offset + source.size(), 0);
+        }
+        DD carry = 0;
+        for (size_t i = 0; i < source.size() || carry > 0; ++i)
+        {
+            DD sum = carry + target[offset + i];
+            if (i < source.size()) {
+                sum += source[i];
+            }
+            target[offset + i] = static_cast<D>(sum % BASE);
+            carry = sum / BASE;
+        }
     }
 
     template<typename D, typename DD>
-    BigInt<D, DD> BigInt<D, DD>::karatsubaMultiply(const BigInt& a, const BigInt& b)
+    void BigInt<D, DD>::subtractFromInternal(std::vector<D>& target, const std::vector<D>& source)
+    {
+        long long borrow = 0;
+        for (size_t i = 0; i < source.size() || borrow != 0; ++i)
+        {
+            long long diff = static_cast<long long>(target[i]) - ((i < source.size()) ? source[i] : 0) - borrow;
+            if (diff < 0)
+            {
+                diff += BASE;
+                borrow = 1;
+            }
+            else
+            {
+                borrow = 0;
+            }
+            target[i] = static_cast<D>(diff);
+        }
+    }
+
+    template<typename D, typename DD>
+    void BigInt<D, DD>::schoolbookMultiplyInternal(
+        typename std::vector<D>::const_iterator a_begin, typename std::vector<D>::const_iterator a_end,
+        typename std::vector<D>::const_iterator b_begin, typename std::vector<D>::const_iterator b_end,
+        std::vector<D>& result)
+    {
+        size_t n_a = std::distance(a_begin, a_end);
+        size_t n_b = std::distance(b_begin, b_end);
+        if (n_a == 0 || n_b == 0)
+        {
+            return;
+        }
+
+        result.assign(n_a + n_b, 0);
+        for (size_t i = 0; i < n_a; ++i)
+        {
+            DD carry = 0;
+            for (size_t j = 0; j < n_b; ++j)
+            {
+                DD prod = static_cast<DD>(*(a_begin + i)) * (*(b_begin + j)) + result[i + j] + carry;
+                result[i + j] = static_cast<D>(prod % BASE);
+                carry = prod / BASE;
+            }
+            if (carry > 0)
+            {
+                result[i + n_b] += carry;
+            }
+        }
+    }
+
+    template<typename D, typename DD>
+    void BigInt<D, DD>::karatsubaRecursive(
+        typename std::vector<D>::const_iterator a_begin, typename std::vector<D>::const_iterator a_end,
+        typename std::vector<D>::const_iterator b_begin, typename std::vector<D>::const_iterator b_end,
+        std::vector<D>& result)
+    {
+        size_t n_a = std::distance(a_begin, a_end);
+        size_t n_b = std::distance(b_begin, b_end);
+
+        if (n_a < 32 || n_b < 32)
+        {
+            schoolbookMultiplyInternal(a_begin, a_end, b_begin, b_end, result);
+            return;
+        }
+
+        size_t m = std::min(n_a, n_b) / 2;
+
+        auto a_low_end = a_begin + std::min(m, n_a);
+        auto a_high_begin = a_begin + std::min(m, n_a);
+        auto b_low_end = b_begin + std::min(m, n_b);
+        auto b_high_begin = b_begin + std::min(m, n_b);
+
+        std::vector<D> z2;
+        karatsubaRecursive(a_high_begin, a_end, b_high_begin, b_end, z2);
+
+        std::vector<D> z0;
+        karatsubaRecursive(a_begin, a_low_end, b_begin, b_low_end, z0);
+
+        std::vector<D> a_sum;
+        addToInternal(a_sum, std::vector<D>(a_begin, a_low_end));
+        addToInternal(a_sum, std::vector<D>(a_high_begin, a_end));
+
+        std::vector<D> b_sum;
+        addToInternal(b_sum, std::vector<D>(b_begin, b_low_end));
+        addToInternal(b_sum, std::vector<D>(b_high_begin, b_end));
+
+        std::vector<D> z1;
+        karatsubaRecursive(a_sum.cbegin(), a_sum.cend(), b_sum.cbegin(), b_sum.cend(), z1);
+
+        subtractFromInternal(z1, z0);
+        subtractFromInternal(z1, z2);
+
+        result.clear();
+        addToInternal(result, z0);
+        addToInternal(result, z1, m);
+        addToInternal(result, z2, 2 * m);
+    }
+
+    template<typename D, typename DD>
+    BigInt<D, DD> BigInt<D, DD>::multiplyMagnitude(const BigInt& a, const BigInt& b)
     {
         if (a.isZero() || b.isZero())
         {
             return BigInt(0);
         }
-        if (a.digits_.size() < 32 || b.digits_.size() < 32)
-        {
-            BigInt res;
-            res.digits_.resize(a.digits_.size() + b.digits_.size(), 0);
-            for (size_t i = 0; i < a.digits_.size(); ++i)
-            {
-                double_digit_type carry = 0;
-                for (size_t j = 0; j < b.digits_.size(); ++j)
-                {
-                    double_digit_type prod = static_cast<double_digit_type>(a.digits_[i]) * b.digits_[j] + res.digits_[i+j] + carry;
-                    res.digits_[i+j] = static_cast<digit_type>(prod % BASE);
-                    carry = prod / BASE;
-                }
-                if (carry > 0)
-                {
-                    res.digits_[i + b.digits_.size()] += carry;
-                }
-            }
-            res.trimLeadingZeros();
-            return res;
-        }
 
-        size_t m = std::min(a.digits_.size(), b.digits_.size()) / 2;
-        BigInt a_low, a_high, b_low, b_high;
-        a_low.digits_.assign(a.digits_.begin(), a.digits_.begin() + m);
-        a_high.digits_.assign(a.digits_.begin() + m, a.digits_.end());
-        b_low.digits_.assign(b.digits_.begin(), b.digits_.begin() + m);
-        b_high.digits_.assign(b.digits_.begin() + m, b.digits_.end());
-
-        a_low.trimLeadingZeros(); a_high.trimLeadingZeros();
-        b_low.trimLeadingZeros(); b_high.trimLeadingZeros();
-
-        BigInt z0 = karatsubaMultiply(a_low, b_low);
-        BigInt z2 = karatsubaMultiply(a_high, b_high);
-        BigInt z1 = karatsubaMultiply(a_low + a_high, b_low + b_high);
-        z1 -= z0;
-        z1 -= z2;
-
-        if (!z2.isZero())
-        {
-            z2.digits_.insert(z2.digits_.begin(), 2 * m, 0);
-        }
-        if (!z1.isZero())
-        {
-            z1.digits_.insert(z1.digits_.begin(), m, 0);
-        }
-
-        BigInt result = z0 + z1 + z2;
-        result.trimLeadingZeros();
-        return result;
+        BigInt res;
+        karatsubaRecursive(a.digits_.cbegin(), a.digits_.cend(), b.digits_.cbegin(), b.digits_.cend(), res.digits_);
+        res.trimLeadingZeros();
+        return res;
     }
 
     template<typename D, typename DD>
