@@ -10,9 +10,51 @@
 #include <sstream>
 #include <type_traits>
 #include <cctype>
+#include <limits>
 
 namespace betadatastructures
 {
+    namespace detail
+    {
+        template <typename T>
+        constexpr int calculate_base_digits()
+        {
+            T power_of_10 = 1;
+            int exponent = 0;
+
+            if constexpr (std::numeric_limits<T>::is_bounded)
+            {
+                while (std::numeric_limits<T>::max() / 10 >= power_of_10)
+                {
+                    if (power_of_10 > std::numeric_limits<T>::max() / 10) break;
+                    power_of_10 *= 10;
+                    exponent++;
+                }
+            }
+            return exponent;
+        }
+
+        template <typename T>
+        constexpr T calculate_base_value(int digits)
+        {
+            T result = 1;
+            for (int i = 0; i < digits; ++i)
+            {
+                result *= 10;
+            }
+            return result;
+        }
+    } // namespace detail
+
+    template <typename DigitT>
+    struct BaseSelector
+    {
+        static constexpr int DIGITS = detail::calculate_base_digits<DigitT>();
+        static constexpr DigitT VALUE = detail::calculate_base_value<DigitT>(DIGITS);
+
+        static_assert(DIGITS > 0, "Could not determine a valid base for the given DigitT. Is it a bounded integer type?");
+    };
+
     template <typename DigitT = uint32_t, typename DoubleDigitT = uint64_t>
     class BigInt
     {
@@ -24,8 +66,8 @@ namespace betadatastructures
         using digit_type = DigitT;
         using double_digit_type = DoubleDigitT;
 
-        static constexpr digit_type BASE_DIGITS = 9;
-        static constexpr digit_type BASE = 1000000000;
+       static constexpr digit_type BASE = BaseSelector<digit_type>::VALUE;
+        static constexpr int BASE_DIGITS = BaseSelector<digit_type>::DIGITS;
 
         class LazyProxy;
 
@@ -33,6 +75,7 @@ namespace betadatastructures
         enum class State { Eager, Lazy };
 
         bool is_negative_ = false;
+
         std::vector<digit_type> digits_;
         State state_ = State::Eager;
 
