@@ -797,39 +797,27 @@ namespace betadatastructures
 
             BigInt temp_product = multiplyShort(b_norm, q_hat);
 
-            long long borrow = 0;
-            for (size_t j = 0; j < temp_product.digits_.size(); ++j)
-            {
-                long long diff = static_cast<long long>(a_norm.digits_[i + j]) - temp_product.digits_[j] - borrow;
-                if (diff < 0)
-                {
-                    diff += BASE;
-                    borrow = 1;
-                }
-                else
-                {
-                    borrow = 0;
-                }
-                a_norm.digits_[i + j] = static_cast<D>(diff);
-            }
-            borrow = static_cast<long long>(a_norm.digits_[i + temp_product.digits_.size()]) - borrow;
-            if (borrow < 0)
-            {
-                a_norm.digits_[i + temp_product.digits_.size()] = 0;
-            }
+            BigInt u_slice;
+            u_slice.digits_.assign(a_norm.digits_.begin() + i, a_norm.digits_.begin() + i + m + 1);
+            u_slice.trimLeadingZeros();
 
-            if (borrow < 0)
+            if (compareMagnitude(u_slice, temp_product) < 0)
             {
                 q_hat--;
 
-                DD carry = 0;
-                for (size_t j = 0; j < b_norm.digits_.size(); ++j)
-                {
-                    DD sum = static_cast<DD>(a_norm.digits_[i + j]) + b_norm.digits_[j] + carry;
-                    a_norm.digits_[i + j] = static_cast<D>(sum % BASE);
-                    carry = sum / BASE;
-                }
-                a_norm.digits_[i + b_norm.digits_.size()] += carry;
+                addMagnitude(u_slice, b_norm);
+            }
+
+            subtractMagnitude(u_slice, temp_product);
+
+            for(size_t j = 0; j < u_slice.digits_.size(); ++j)
+            {
+                a_norm.digits_[i + j] = u_slice.digits_[j];
+            }
+
+            for(size_t j = u_slice.digits_.size(); j <= m; ++j)
+            {
+                a_norm.digits_[i + j] = 0;
             }
 
             if (q.digits_.size() > i)
